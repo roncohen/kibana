@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { Request, Server } from 'hapi';
+import { Request, Server, ResponseObject } from 'hapi';
 
 import { Logger, LoggerFactory } from '../logging';
 import { HttpConfig } from './http_config';
@@ -141,6 +141,42 @@ export class HttpServer {
       }
     }
 
+    // const WebSocket = require('ws');
+
+
+    let clients = 0;
+
+    setInterval(() => console.log("clients", clients), 10000)
+    // this.server.listener.on("request", (req, res) =>{
+    //   console.log("HELLO")
+    //   clients++
+    //   setTimeout(() => {
+    //             clients--;
+    //     res.end('success')
+    //   }, 30000)
+    // })
+
+    this.server.route({
+        method: "GET",
+        path: "/hello-fleet",
+        handler: () => {
+
+        const p = new Promise<ResponseObject>((res, rev) => {
+          // @ts-ignore
+          clients++
+          setTimeout(() => {
+            clients--;
+            res('success')
+          }, 30000)
+        });
+        // const clientId = request.headers['clientId'][0];
+        // if (clientId) {
+        //   clients[clientId] = p
+        // }
+        
+        return p;
+      }})
+
     await this.server.start();
     const serverPath =
       this.config && this.config.rewriteBasePath && this.config.basePath !== undefined
@@ -182,6 +218,7 @@ export class HttpServer {
     }
 
     this.server.ext('onRequest', (request, h) => {
+      // WAT?
       // whenever there is a referrer, don't use compression even if the client supports it
       if (request.info.referrer !== '') {
         this.log.debug(
