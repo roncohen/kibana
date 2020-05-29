@@ -24,7 +24,6 @@ import { appContextService } from '../app_context';
 export async function agentCheckin(
   soClient: SavedObjectsClientContract,
   agent: Agent,
-  events: NewAgentEvent[],
   localMetadata?: any
 ) {
   const updateData: {
@@ -71,19 +70,11 @@ export async function agentCheckin(
     }
   }
 
-  const { updatedErrorEvents } = await processEventsForCheckin(soClient, agent, events);
-
-  // Persist changes
-  if (updatedErrorEvents) {
-    updateData.current_error_events = JSON.stringify(updatedErrorEvents);
-  }
-
-  await soClient.update<AgentSOAttributes>(AGENT_SAVED_OBJECT_TYPE, agent.id, updateData);
 
   return { actions };
 }
 
-async function processEventsForCheckin(
+export async function processEventsForCheckin(
   soClient: SavedObjectsClientContract,
   agent: Agent,
   events: NewAgentEvent[]

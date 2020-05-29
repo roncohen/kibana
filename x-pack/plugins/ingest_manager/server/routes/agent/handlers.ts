@@ -15,6 +15,8 @@ import {
   PostAgentUnenrollResponse,
   GetAgentStatusResponse,
   PutAgentReassignResponse,
+  AgentAction,
+  AgentSOAttributes,
 } from '../../../common/types';
 import {
   GetAgentsRequestSchema,
@@ -31,6 +33,8 @@ import {
 import * as AgentService from '../../services/agents';
 import * as APIKeyService from '../../services/api_keys';
 import { appContextService } from '../../services/app_context';
+import { processEventsForCheckin } from '../../services/agents';
+import { AGENT_SAVED_OBJECT_TYPE } from '../../constants';
 
 export function getInternalUserSOClient(request: KibanaRequest) {
   // soClient as kibana internal users, be carefull on how you use it, security is not enabled
@@ -170,21 +174,66 @@ export const updateAgentHandler: RequestHandler<
   }
 };
 
+function timeout(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+const maxLongPoll = 250000;
+
 export const postAgentCheckinHandler: RequestHandler<
   TypeOf<typeof PostAgentCheckinRequestSchema.params>,
   undefined,
   TypeOf<typeof PostAgentCheckinRequestSchema.body>
 > = async (context, request, response) => {
+  console.log("HELLO");
+  // response.ok({ action: 'checkin', success:true });
+
   try {
     const soClient = getInternalUserSOClient(request);
     const res = APIKeyService.parseApiKeyFromHeaders(request.headers);
     const agent = await AgentService.getAgentByAccessAPIKeyId(soClient, res.apiKeyId);
-    const { actions } = await AgentService.agentCheckin(
-      soClient,
-      agent,
-      request.body.events || [],
-      request.body.local_metadata
-    );
+
+    const updateData: {
+      last_checkin: string;
+      default_api_key?: string;
+      // local_metadata?: AgentMetadata;
+      current_error_events?: string;
+    } = {
+      last_checkin: new Date().toISOString(),
+    };
+    const { updatedErrorEvents } = await processEventsForCheckin(soClient, agent, request.body.events || []);
+
+    // Persist changes
+    if (updatedErrorEvents) {
+      updateData.current_error_events = JSON.stringify(updatedErrorEvents);
+    }
+
+    await soClient.update<AgentSOAttributes>(AGENT_SAVED_OBJECT_TYPE, agent.id, updateData);
+
+    const start = Date.now()
+    // let closed = false
+    // request.ra
+    //   console.log("closed socket early");
+    //   closed = true
+    // })
+
+    let actions: AgentAction[] = []
+    while (Date.now() - start < maxLongPoll) {
+      actions = (await AgentService.agentCheckin(
+        soClient,
+        agent,
+        request.body.local_metadata
+      )).actions;
+
+      if (actions.length > 0) {
+        break;
+      }
+
+      await timeout(2000);
+      
+    }
+    
+
     const body: PostAgentCheckinResponse = {
       action: 'checkin',
       success: true,
